@@ -235,30 +235,31 @@ model Hotel {
 }
 
 model EmailIntegration {
-  id            Int       @id @default(autoincrement())
-  hotelId       Int       @unique @map("hotel_id")
-  provider      String    @default("IMAP_SMTP")
-  mailboxEmail  String    @map("mailbox_email")
-  status        String    @default("Disconnected")
-  oauthTenantId String?   @map("oauth_tenant_id")
-  oauthUserId   String?   @map("oauth_user_id")
-  secretRef     String?   @map("secret_ref") @db.Text
-  imapHost      String?   @map("imap_host")
-  imapPort      Int?      @map("imap_port")
-  imapSecure    Boolean   @default(true) @map("imap_secure")
-  smtpHost      String?   @map("smtp_host")
-  smtpPort      Int?      @map("smtp_port")
-  smtpSecure    Boolean   @default(true) @map("smtp_secure")
-  smtpUser      String?   @map("smtp_user")
-  smtpPass      String?   @map("smtp_pass") @db.Text
-  lastHistoryId String?   @map("last_history_id")
-  lastDeltaLink String?   @map("last_delta_link") @db.Text
-  lastUid       Int?      @map("last_uid")
-  uidValidity   String?   @map("uid_validity")
-  lastSyncedAt  DateTime? @map("last_synced_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  hotel         Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  id             Int       @id @default(autoincrement())
+  hotelId        Int       @unique @map("hotel_id")
+  provider       String    @default("IMAP_SMTP")
+  mailboxEmail   String    @map("mailbox_email")
+  status         String    @default("Disconnected")
+  oauthTenantId  String?   @map("oauth_tenant_id")
+  oauthUserId    String?   @map("oauth_user_id")
+  secretRef      String?   @map("secret_ref") @db.Text
+  imapHost       String?   @map("imap_host")
+  imapPort       Int?      @map("imap_port")
+  imapSecure     Boolean   @default(true) @map("imap_secure")
+  smtpHost       String?   @map("smtp_host")
+  smtpPort       Int?      @map("smtp_port")
+  smtpSecure     Boolean   @default(true) @map("smtp_secure")
+  smtpUser       String?   @map("smtp_user")
+  smtpPass       String?   @map("smtp_pass") @db.Text
+  lastHistoryId  String?   @map("last_history_id")
+  lastDeltaLink  String?   @map("last_delta_link") @db.Text
+  lastUid        Int?      @map("last_uid")
+  uidValidity    String?   @map("uid_validity")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  watchExpiresAt DateTime? @map("watch_expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  hotel          Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([provider])
   @@index([status])

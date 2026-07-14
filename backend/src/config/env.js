@@ -18,6 +18,11 @@ const config = {
     intervalSeconds: Number(process.env.EMAIL_POLLING_INTERVAL_SECONDS || 60),
     maxResults: Number(process.env.EMAIL_POLLING_MAX_RESULTS || 10)
   },
+  googlePubSub: {
+    expectedAudience: process.env.GOOGLE_PUBSUB_AUDIENCE,
+    pushServiceAccount: process.env.GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT,
+    topic: process.env.GOOGLE_PUBSUB_TOPIC
+  },
   googleOAuth: {
     clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
     clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,

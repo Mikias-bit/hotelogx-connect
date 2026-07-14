@@ -1,13 +1,31 @@
 const express = require('express');
+const config = require('../config/env');
+const gmailPubSubService = require('../services/email/GmailPubSubService');
+const googleOidcVerifier = require('../services/security/GoogleOidcVerifier');
 
 const router = express.Router();
 
 router.post('/google/pubsub', async (req, res) => {
-  res.status(501).json({
-    success: false,
-    provider: 'GOOGLE_WORKSPACE',
-    message: 'Gmail Pub/Sub webhook endpoint is reserved. Gmail watch and History API sync are not implemented yet.'
-  });
+  try {
+    const oidcResult = await googleOidcVerifier.verifyAuthorizationHeader(req.get('authorization'), {
+      audience: config.googlePubSub.expectedAudience,
+      serviceAccountEmail: config.googlePubSub.pushServiceAccount
+    });
+    const result = await gmailPubSubService.processPushEnvelope(req.body);
+    res.status(200).json({
+      success: true,
+      provider: 'GOOGLE_WORKSPACE',
+      oidc: oidcResult,
+      result
+    });
+  } catch (error) {
+    console.error('[Gmail Pub/Sub] Push processing failed:', error.message);
+    res.status(400).json({
+      success: false,
+      provider: 'GOOGLE_WORKSPACE',
+      message: error.message
+    });
+  }
 });
 
 router.get('/microsoft/notifications', async (req, res) => {

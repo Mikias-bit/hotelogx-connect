@@ -2,6 +2,8 @@ const prisma = require('../../../config/prisma');
 const { googleOAuthService } = require('../GoogleOAuthService');
 
 const GMAIL_API_BASE_URL = 'https://gmail.googleapis.com/gmail/v1/users/me';
+const GMAIL_WATCH_URL = `${GMAIL_API_BASE_URL}/watch`;
+const GMAIL_STOP_URL = `${GMAIL_API_BASE_URL}/stop`;
 
 function base64UrlEncode(value) {
   return Buffer.from(value)
@@ -123,8 +125,83 @@ class GoogleWorkspaceEmailAdapter {
     };
   }
 
-  async renewSubscription() {
-    throw new Error('Google Workspace Gmail watch renewal is not implemented yet.');
+  async renewSubscription({ topicName }) {
+    if (!topicName) {
+      throw new Error('Google Pub/Sub topic name is required for Gmail watch registration.');
+    }
+
+    const accessToken = await this.getAccessToken();
+    const response = await fetch(GMAIL_WATCH_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        topicName,
+        labelIds: ['INBOX'],
+        labelFilterBehavior: 'INCLUDE'
+      })
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(`Gmail watch registration failed: ${payload.error?.message || response.statusText}`);
+    }
+
+    const expirationMs = Number(payload.expiration || 0);
+    const watchExpiresAt = expirationMs ? new Date(expirationMs) : null;
+
+    if (prisma.emailIntegration) {
+      await prisma.emailIntegration.update({
+        where: { hotelId: Number(this.integration.hotelId) },
+        data: {
+          lastHistoryId: payload.historyId ? String(payload.historyId) : this.integration.lastHistoryId,
+          watchExpiresAt,
+          lastSyncedAt: new Date()
+        }
+      });
+    }
+
+    return {
+      provider: 'GOOGLE_WORKSPACE',
+      mailboxEmail: this.integration.mailboxEmail,
+      topicName,
+      historyId: payload.historyId ? String(payload.historyId) : null,
+      watchExpiresAt
+    };
+  }
+
+  async stopSubscription() {
+    const accessToken = await this.getAccessToken();
+    const response = await fetch(GMAIL_STOP_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!response.ok) {
+      let message = response.statusText;
+      try {
+        const payload = await response.json();
+        message = payload.error?.message || message;
+      } catch (error) {
+        // Gmail stop may return an empty body. Keep status text when JSON parsing fails.
+      }
+      throw new Error(`Gmail watch stop failed: ${message}`);
+    }
+
+    if (prisma.emailIntegration) {
+      await prisma.emailIntegration.update({
+        where: { hotelId: Number(this.integration.hotelId) },
+        data: { watchExpiresAt: null }
+      });
+    }
+
+    return {
+      provider: 'GOOGLE_WORKSPACE',
+      mailboxEmail: this.integration.mailboxEmail,
+      stopped: true
+    };
   }
 
   async getAccessToken() {

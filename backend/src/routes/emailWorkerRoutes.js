@@ -1,6 +1,7 @@
 const express = require('express');
 const config = require('../config/env');
 const gmailPollingService = require('../services/email/GmailPollingService');
+const gmailWatchService = require('../services/email/GmailWatchService');
 
 const router = express.Router();
 
@@ -32,6 +33,29 @@ router.post('/gmail-poll', async (req, res) => {
   }
 });
 
+router.post('/gmail-watch/register', async (req, res) => {
+  try {
+    const result = await gmailWatchService.registerWatchForHotel(req.body.hotelId || req.query.hotelId, {
+      topicName: req.body.topicName || req.query.topicName || null
+    });
+
+    res.json({ success: true, provider: 'GOOGLE_WORKSPACE', result });
+  } catch (error) {
+    console.error('[Email Worker] Gmail watch registration failed:', error);
+    res.status(500).json({ success: false, provider: 'GOOGLE_WORKSPACE', message: error.message });
+  }
+});
+
+router.post('/gmail-watch/stop', async (req, res) => {
+  try {
+    const result = await gmailWatchService.stopWatchForHotel(req.body.hotelId || req.query.hotelId);
+    res.json({ success: true, provider: 'GOOGLE_WORKSPACE', result });
+  } catch (error) {
+    console.error('[Email Worker] Gmail watch stop failed:', error);
+    res.status(500).json({ success: false, provider: 'GOOGLE_WORKSPACE', message: error.message });
+  }
+});
+
 router.post('/imap-poll', async (req, res) => {
   res.status(501).json({
     success: false,
@@ -41,10 +65,17 @@ router.post('/imap-poll', async (req, res) => {
 });
 
 router.post('/subscription-renewal', async (req, res) => {
-  res.status(501).json({
-    success: false,
-    message: 'Email subscription renewal worker is reserved for Gmail watch and Microsoft Graph subscription renewal.'
-  });
+  try {
+    const result = await gmailWatchService.renewExpiringWatches({
+      renewWithinHours: req.body.renewWithinHours || req.query.renewWithinHours || 24,
+      topicName: req.body.topicName || req.query.topicName || null
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('[Email Worker] Subscription renewal failed:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 module.exports = router;
