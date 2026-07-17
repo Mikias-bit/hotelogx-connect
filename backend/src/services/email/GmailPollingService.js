@@ -73,7 +73,7 @@ class GmailPollingService {
         }
       }
 
-      if (changes.newHistoryId) {
+      if (changes.newHistoryId && result.failed === 0) {
         await prisma.emailIntegration.update({
           where: { hotelId: integration.hotelId },
           data: {
@@ -82,6 +82,11 @@ class GmailPollingService {
           }
         });
         result.lastHistoryId = changes.newHistoryId;
+      } else if (changes.newHistoryId && result.failed > 0) {
+        result.pendingHistoryId = changes.newHistoryId;
+        result.errors.push({
+          message: 'Gmail history cursor was not advanced because one or more messages failed to process.'
+        });
       } else {
         await prisma.emailIntegration.update({
           where: { hotelId: integration.hotelId },

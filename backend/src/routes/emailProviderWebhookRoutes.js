@@ -12,6 +12,16 @@ router.post('/google/pubsub', async (req, res) => {
       serviceAccountEmail: config.googlePubSub.pushServiceAccount
     });
     const result = await gmailPubSubService.processPushEnvelope(req.body);
+    if (result.result?.failed > 0) {
+      return res.status(500).json({
+        success: false,
+        provider: 'GOOGLE_WORKSPACE',
+        oidc: oidcResult,
+        result,
+        message: 'Gmail Pub/Sub notification was received, but one or more messages failed to process.'
+      });
+    }
+
     res.status(200).json({
       success: true,
       provider: 'GOOGLE_WORKSPACE',

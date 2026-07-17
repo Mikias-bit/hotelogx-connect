@@ -42,6 +42,7 @@ class GmailPubSubService {
     });
 
     if (!integration) {
+      console.warn(`[Gmail Pub/Sub] Ignored notification for ${notification.emailAddress}: no connected integration. historyId=${notification.historyId}`);
       return {
         success: true,
         ignored: true,
@@ -55,6 +56,23 @@ class GmailPubSubService {
       maxResults: 25,
       awaitAutomation: true
     });
+
+    console.log([
+      '[Gmail Pub/Sub] Processed notification',
+      `hotelId=${integration.hotelId}`,
+      `mailbox=${integration.mailboxEmail}`,
+      `notificationHistoryId=${notification.historyId}`,
+      `fetched=${result.fetched}`,
+      `processed=${result.processed}`,
+      `duplicates=${result.duplicates}`,
+      `failed=${result.failed}`,
+      `lastHistoryId=${result.lastHistoryId || integration.lastHistoryId || 'none'}`,
+      result.pendingHistoryId ? `pendingHistoryId=${result.pendingHistoryId}` : null
+    ].filter(Boolean).join(' '));
+
+    if (result.errors.length > 0) {
+      console.error('[Gmail Pub/Sub] Processing errors:', JSON.stringify(result.errors));
+    }
 
     return {
       success: true,
