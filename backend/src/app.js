@@ -49,9 +49,15 @@ app.use(cors({
 // Rate Limiter (Disabled in Development)
 if (process.env.NODE_ENV === 'production') {
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200,
-    message: 'Too many requests from this IP, please try again later.'
+    windowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
+    max: Number(process.env.API_RATE_LIMIT_MAX || 2000),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      message: 'Too many requests from this IP, please try again later.'
+    },
+    skip: (req) => req.path.startsWith('/health') || req.path.startsWith('/webhooks/')
   });
   app.use('/api', limiter);
 }

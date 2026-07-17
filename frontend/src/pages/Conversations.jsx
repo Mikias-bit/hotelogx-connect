@@ -105,7 +105,7 @@ const Conversations = () => {
     };
 
     fetchAllConversations();
-    const interval = setInterval(fetchAllConversations, 5000);
+    const interval = setInterval(fetchAllConversations, 15000);
     return () => clearInterval(interval);
   }, [selectedId]);
 
@@ -137,7 +137,7 @@ const Conversations = () => {
     };
 
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
+    const interval = setInterval(fetchMessages, 10000);
     return () => clearInterval(interval);
   }, [selectedId]);
 
