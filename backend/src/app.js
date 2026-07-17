@@ -20,21 +20,29 @@ const revenueRoutes = require('./routes/revenueRoutes');
 const activityRoutes = require('./routes/activityRoutes');
 const whatsappRoutes = require('./routes/whatsappRoutes');
 const errorMiddleware = require('./middleware/errorMiddleware');
+const config = require('./config/env');
 
 const app = express();
 
 // Enable trusting the proxy headers when deployed behind reverse proxies (e.g. Railway)
 app.set('trust proxy', 1);
 
+const allowedOrigins = [
+  "https://hotel-pms-new.netlify.app",
+  "https://hotelogx-connect.netlify.app",
+  "http://localhost:5137",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  config.frontendBaseUrl,
+  ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [])
+]
+  .map((origin) => origin && origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 // Security Middleware
 app.use(helmet());
 app.use(cors({
-  origin: [
-    "https://hotel-pms-new.netlify.app",
-    "http://localhost:5137",
-    "http://localhost:5173",
-    "http://localhost:5174"
-  ],
+  origin: allowedOrigins,
   credentials: true
 }));
 
