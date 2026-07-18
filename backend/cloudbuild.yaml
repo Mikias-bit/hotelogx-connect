@@ -9,6 +9,20 @@ steps:
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:latest
       - .
 
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args:
+      - gcloud
+      - run
+      - services
+      - update
+      - ${_SERVICE_NAME}
+      - --image
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA
+      - --region
+      - ${_REGION}
+      - --platform
+      - managed
+
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/${_SERVICE_NAME}:latest
