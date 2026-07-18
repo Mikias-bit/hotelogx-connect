@@ -450,16 +450,99 @@ ${activeBookingStateText}`;
   // ==========================================
   // TOOL IMPLEMENTATIONS
   // ==========================================
+
+  _extractKnowledgeSnippet(text, searchQuery, maxChars = 1200) {
+    if (!text) return '';
+
+    const normalizedText = text.replace(/\s+/g, ' ').trim();
+    const lowerText = normalizedText.toLowerCase();
+    const terms = String(searchQuery || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .filter(term => term.length >= 3);
+
+    let hitIndex = -1;
+    for (const term of terms) {
+      hitIndex = lowerText.indexOf(term);
+      if (hitIndex >= 0) break;
+    }
+
+    if (hitIndex < 0) hitIndex = 0;
+
+    const start = Math.max(0, hitIndex - Math.floor(maxChars / 3));
+    const end = Math.min(normalizedText.length, start + maxChars);
+    const prefix = start > 0 ? '...' : '';
+    const suffix = end < normalizedText.length ? '...' : '';
+
+    return `${prefix}${normalizedText.slice(start, end)}${suffix}`;
+  }
+
+  async _fallbackQueryKnowledgeDocuments(hotelId, searchQuery) {
+    const docs = await prisma.knowledgeDocument.findMany({
+      where: {
+        hotelId,
+        rawText: { not: null }
+      },
+      select: {
+        id: true,
+        filename: true,
+        docType: true,
+        rawText: true,
+        isVectorized: true,
+        vectorCount: true
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 25
+    });
+
+    if (!docs.length) return null;
+
+    const query = String(searchQuery || '').toLowerCase();
+    const compactQuery = query.replace(/\s+/g, '');
+    const terms = query
+      .split(/[^a-z0-9]+/i)
+      .filter(term => term.length >= 3);
+
+    const scoredDocs = docs
+      .map(doc => {
+        const text = doc.rawText || '';
+        const lowerText = text.toLowerCase();
+        const compactText = lowerText.replace(/\s+/g, '');
+        let score = 0;
+
+        if (query && lowerText.includes(query)) score += 10;
+        if (compactQuery && compactText.includes(compactQuery)) score += 8;
+        for (const term of terms) {
+          if (lowerText.includes(term)) score += 1;
+        }
+
+        return { doc, score };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    if (!scoredDocs.length) return null;
+
+    return scoredDocs
+      .map(({ doc }) => {
+        const snippet = this._extractKnowledgeSnippet(doc.rawText, searchQuery);
+        return `Source: ${doc.filename} (${doc.docType || 'Knowledge document'})\n${snippet}`;
+      })
+      .join("\n\n---\n\n");
+  }
   
   async _toolQueryHotelKnowledgeBase(hotelId, guest, args, context) {
     try {
       const q = await openai.embeddings.create({ model: "text-embedding-3-small", input: args.search_query, dimensions: 1024 });
       const vector = q.data[0].embedding;
       const matches = await vectorDb.querySimilarEmbeddings(vector, hotelId, 6);
-      if (matches.length > 0) {
+      const minSimilarity = Number(process.env.RAG_MIN_SIMILARITY || 0.2);
+      const relevantMatches = matches.filter(match => Number(match.score || 0) >= minSimilarity);
+      if (relevantMatches.length > 0) {
         // Deduplicate by content prefix to avoid sending same chunk multiple times
         const seen = new Set();
-        const uniqueChunks = matches.filter(m => {
+        const uniqueChunks = relevantMatches.filter(m => {
           const key = m.metadata.content.substring(0, 100);
           if (seen.has(key)) return false;
           seen.add(key);
@@ -467,9 +550,17 @@ ${activeBookingStateText}`;
         });
         return { status: "success", data: uniqueChunks.map(m => m.metadata.content).join("\n\n---\n\n") };
       }
+      const fallbackContent = await this._fallbackQueryKnowledgeDocuments(hotelId, args.search_query);
+      if (fallbackContent) {
+        return { status: "success", data: fallbackContent, source: "raw_text_fallback" };
+      }
       return { status: "success", data: "No specific policy found." };
     } catch (e) { 
       console.error('[Automation Engine] RAG query failed:', e);
+      const fallbackContent = await this._fallbackQueryKnowledgeDocuments(hotelId, args.search_query);
+      if (fallbackContent) {
+        return { status: "success", data: fallbackContent, source: "raw_text_fallback_after_vector_error" };
+      }
       return { status: "error", message: "Knowledge base error." }; 
     }
   }

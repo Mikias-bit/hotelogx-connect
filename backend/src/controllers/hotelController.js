@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const asyncHandler = require('../middleware/asyncHandler');
 const { sendSuccess } = require('../utils/responseHandler');
 const { encrypt } = require('../utils/cryptoUtils');
+const vectorDb = require('../utils/vectorDb');
 
 const encryptSecrets = (data) => {
   if (data.pmsApiKey) data.pmsApiKey = encrypt(data.pmsApiKey);
@@ -41,6 +42,10 @@ const createHotel = asyncHandler(async (req, res) => {
       whatsappConnected: false,
       pmsConnected: false
     }
+  });
+
+  vectorDb.initDb().catch(error => {
+    console.error(`[Vector DB] Initialization failed after hotel creation hotelId=${hotel.id}:`, error.message);
   });
   
   return sendSuccess(res, 201, hotel);

@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "vector:init": "node scripts/ensure-vector-store.js",
+    "vector:reindex": "node scripts/reindex-knowledge-documents.js"
   },
   "dependencies": {
     "@prisma/client": "^5.13.0",
