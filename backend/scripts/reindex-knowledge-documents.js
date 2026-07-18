@@ -79,6 +79,8 @@ async function main() {
   await vectorDb.initDb();
   console.log(`Found ${documents.length} document(s) to re-index.`);
 
+  const touchedHotelIds = new Set();
+
   for (const doc of documents) {
     const chunks = chunkText(doc.rawText);
     if (!chunks.length) {
@@ -107,6 +109,32 @@ async function main() {
         vectorCount: records.length
       }
     });
+
+    touchedHotelIds.add(doc.hotelId);
+  }
+
+  for (const hotelId of touchedHotelIds) {
+    const remainingPendingDocs = await prisma.knowledgeDocument.count({
+      where: {
+        hotelId,
+        rawText: { not: null },
+        OR: [
+          { isVectorized: false },
+          { vectorCount: 0 }
+        ]
+      }
+    });
+
+    await prisma.hotel.update({
+      where: { id: hotelId },
+      data: {
+        knowledgeBaseStatus: remainingPendingDocs === 0 ? 'Indexed' : 'Partially Indexed'
+      }
+    });
+
+    console.log(
+      `Updated hotelId=${hotelId} knowledgeBaseStatus=${remainingPendingDocs === 0 ? 'Indexed' : 'Partially Indexed'}`
+    );
   }
 
   console.log('Knowledge document re-indexing complete.');

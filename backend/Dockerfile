@@ -13,6 +13,7 @@ RUN npm ci --omit=dev \
   && npx prisma generate
 
 COPY src ./src
+COPY scripts ./scripts
 COPY docs ./docs
 
 ENV NODE_ENV=production
