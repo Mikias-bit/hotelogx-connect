@@ -226,10 +226,10 @@ router.post('/:hotelId/imap-smtp', async (req, res) => {
       smtpPass
     } = req.body;
 
-    if (!hotelId || !mailboxEmail || !smtpHost || !smtpUser) {
+    if (!hotelId || !mailboxEmail || !imapHost || !smtpHost || !smtpUser) {
       return res.status(400).json({
         success: false,
-        message: 'hotelId, mailboxEmail, smtpHost, and smtpUser are required.'
+        message: 'hotelId, mailboxEmail, imapHost, smtpHost, and smtpUser are required.'
       });
     }
 
