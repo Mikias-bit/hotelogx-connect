@@ -147,6 +147,42 @@ const mockLogs = {
   ]
 };
 
+const EMAIL_PROVIDERS = {
+  GOOGLE_WORKSPACE: 'GOOGLE_WORKSPACE',
+  MICROSOFT_365: 'MICROSOFT_365',
+  IMAP_SMTP: 'IMAP_SMTP'
+};
+
+const normalizeEmailProvider = (provider) => {
+  const value = String(provider || '').toUpperCase();
+  if (['GOOGLE', 'GOOGLE_WORKSPACE', 'GMAIL', 'GMAIL_API'].includes(value)) return EMAIL_PROVIDERS.GOOGLE_WORKSPACE;
+  if (['MICROSOFT', 'MICROSOFT_365', 'OFFICE_365', 'OUTLOOK', 'GRAPH'].includes(value)) return EMAIL_PROVIDERS.MICROSOFT_365;
+  return EMAIL_PROVIDERS.IMAP_SMTP;
+};
+
+const getEmailProviderMeta = (provider) => {
+  const normalized = normalizeEmailProvider(provider);
+  if (normalized === EMAIL_PROVIDERS.GOOGLE_WORKSPACE) {
+    return {
+      name: 'Google Workspace Gmail',
+      channelType: 'Gmail API OAuth',
+      deliveryHealth: 'Gmail API connected'
+    };
+  }
+  if (normalized === EMAIL_PROVIDERS.MICROSOFT_365) {
+    return {
+      name: 'Microsoft 365 Outlook',
+      channelType: 'Microsoft Graph OAuth',
+      deliveryHealth: 'Microsoft Graph mailbox'
+    };
+  }
+  return {
+    name: 'IMAP/SMTP Email',
+    channelType: 'IMAP inbound + SMTP outbound',
+    deliveryHealth: 'Mailbox polling'
+  };
+};
+
 const Integrations = () => {
   const [hotelData, setHotelData] = useState(null);
   const [pmsIntegrations, setPmsIntegrations] = useState([]);
@@ -156,6 +192,7 @@ const Integrations = () => {
   // States for Modals
   const [activeLog, setActiveLog] = useState(null);
   const [activeConfigure, setActiveConfigure] = useState(null);
+  const [configureEmailProvider, setConfigureEmailProvider] = useState(EMAIL_PROVIDERS.IMAP_SMTP);
   const [isSyncingId, setIsSyncingId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -200,8 +237,8 @@ const Integrations = () => {
         setPmsIntegrations(pmsList);
 
         // Map Comm channels
-        const emailProvider = hotel.emailIntegrationType || 'SMTP';
-        const isGoogleWorkspace = emailProvider === 'GOOGLE_WORKSPACE';
+        const emailProvider = normalizeEmailProvider(hotel.emailIntegrationType);
+        const emailMeta = getEmailProviderMeta(emailProvider);
         const channels = [
           {
             id: 'whatsapp',
@@ -222,17 +259,53 @@ const Integrations = () => {
           },
           {
             id: 'email',
-            name: isGoogleWorkspace ? 'Google Workspace Gmail' : 'SMTP Email Reservation Gateway',
+            name: emailMeta.name,
             status: hotel.emailConnected ? 'Active' : 'Disconnected',
-            deliveryHealth: hotel.emailConnected ? 'Connected Mailbox' : 'Offline',
-            channelType: isGoogleWorkspace ? 'Gmail API OAuth' : 'SMTP Server Queue',
+            deliveryHealth: hotel.emailConnected ? emailMeta.deliveryHealth : 'Offline',
+            channelType: emailMeta.channelType,
+            provider: emailProvider,
             icon: Mail,
             color: 'text-blue-600 bg-blue-50 border-blue-100',
             fields: [
+              {
+                label: 'Email Provider',
+                key: 'emailProvider',
+                type: 'select',
+                value: emailProvider,
+                options: [
+                  { value: EMAIL_PROVIDERS.GOOGLE_WORKSPACE, label: 'Google Workspace Gmail' },
+                  { value: EMAIL_PROVIDERS.MICROSOFT_365, label: 'Microsoft 365 Outlook' },
+                  { value: EMAIL_PROVIDERS.IMAP_SMTP, label: 'Other mailbox (IMAP/SMTP)' }
+                ]
+              },
               { label: 'Hotel Mailbox Email', key: 'hotelEmail', value: hotel.hotelEmail || hotel.smtpUser || '', placeholder: 'reservations@hotel.com' },
-              { label: 'SMTP Host', key: 'smtpHost', value: hotel.smtpHost || 'smtp.gmail.com', placeholder: 'smtp.hotel.com' },
-              { label: 'SMTP Port', key: 'smtpPort', value: hotel.smtpPort || 587, placeholder: '587' },
-              { label: 'SMTP User', key: 'smtpUser', value: hotel.smtpUser || '', placeholder: 'reservations@hotel.com' },
+              { label: 'IMAP Host', key: 'imapHost', value: hotel.imapHost || '', placeholder: 'imap.hostinger.com', providers: [EMAIL_PROVIDERS.IMAP_SMTP] },
+              { label: 'IMAP Port', key: 'imapPort', value: hotel.imapPort || 993, placeholder: '993', providers: [EMAIL_PROVIDERS.IMAP_SMTP] },
+              {
+                label: 'IMAP Secure',
+                key: 'imapSecure',
+                type: 'select',
+                value: hotel.imapSecure === false ? 'false' : 'true',
+                options: [
+                  { value: 'true', label: 'SSL/TLS enabled' },
+                  { value: 'false', label: 'No SSL/TLS' }
+                ],
+                providers: [EMAIL_PROVIDERS.IMAP_SMTP]
+              },
+              { label: 'SMTP Host', key: 'smtpHost', value: hotel.smtpHost || '', placeholder: 'smtp.hostinger.com', providers: [EMAIL_PROVIDERS.IMAP_SMTP] },
+              { label: 'SMTP Port', key: 'smtpPort', value: hotel.smtpPort || 587, placeholder: '587', providers: [EMAIL_PROVIDERS.IMAP_SMTP] },
+              {
+                label: 'SMTP Secure',
+                key: 'smtpSecure',
+                type: 'select',
+                value: Number(hotel.smtpPort) === 465 ? 'true' : 'false',
+                options: [
+                  { value: 'false', label: 'STARTTLS / port 587' },
+                  { value: 'true', label: 'SSL/TLS / port 465' }
+                ],
+                providers: [EMAIL_PROVIDERS.IMAP_SMTP]
+              },
+              { label: 'SMTP User', key: 'smtpUser', value: hotel.smtpUser || '', placeholder: 'reservations@hotel.com', providers: [EMAIL_PROVIDERS.IMAP_SMTP] },
               { label: 'SMTP Password', key: 'smtpPass', value: hotel.smtpPass || '', placeholder: '••••••••', type: 'password' }
             ]
           }
@@ -250,11 +323,12 @@ const Integrations = () => {
     fetchIntegrations();
     const params = new URLSearchParams(window.location.search);
     const emailStatus = params.get('emailStatus');
+    const emailProvider = normalizeEmailProvider(params.get('emailProvider'));
     if (emailStatus === 'connected') {
-      triggerToast('Google Workspace mailbox connected successfully.', 'success');
+      triggerToast(`${getEmailProviderMeta(emailProvider).name} mailbox connected successfully.`, 'success');
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (emailStatus === 'error') {
-      triggerToast(params.get('message') || 'Google Workspace connection failed.', 'error');
+      triggerToast(params.get('message') || `${getEmailProviderMeta(emailProvider).name} connection failed.`, 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -315,6 +389,18 @@ const Integrations = () => {
     return `${API_BASE_URL}/api/email-integrations/google/connect/${hotelId}?${params.toString()}`;
   };
 
+  const getMicrosoft365ConnectUrl = (hotel = hotelData) => {
+    const hotelId = hotel?.id || 1;
+    const mailboxEmail = hotel?.hotelEmail || hotel?.smtpUser || '';
+    const returnTo = `${window.location.origin}${window.location.pathname}`;
+    const params = new URLSearchParams({
+      mailboxEmail,
+      returnTo
+    });
+
+    return `${API_BASE_URL}/api/email-integrations/microsoft/connect/${hotelId}?${params.toString()}`;
+  };
+
   const handleGoogleWorkspaceConnect = async () => {
     try {
       triggerToast('Opening Google Workspace authorization...', 'info');
@@ -327,7 +413,9 @@ const Integrations = () => {
       const mailboxEmail = activeHotel.hotelEmail || activeHotel.smtpUser;
       if (!mailboxEmail) {
         triggerToast('Save the hotel mailbox email before connecting Google Workspace.', 'error');
-        setActiveConfigure(commChannels.find(channel => channel.id === 'email') || null);
+        const emailChannel = commChannels.find(channel => channel.id === 'email') || null;
+        setConfigureEmailProvider(EMAIL_PROVIDERS.GOOGLE_WORKSPACE);
+        setActiveConfigure(emailChannel);
         return;
       }
 
@@ -336,6 +424,89 @@ const Integrations = () => {
       console.error('Google Workspace connect failed:', err);
       triggerToast('Could not open Google Workspace authorization. Use the direct test URL or check the backend.', 'error');
     }
+  };
+
+  const handleMicrosoft365Connect = async () => {
+    try {
+      triggerToast('Opening Microsoft 365 authorization...', 'info');
+      const activeHotel = await loadActiveHotel();
+      if (!activeHotel?.id) {
+        window.location.assign(getMicrosoft365ConnectUrl());
+        return;
+      }
+
+      const mailboxEmail = activeHotel.hotelEmail || activeHotel.smtpUser;
+      if (!mailboxEmail) {
+        triggerToast('Save the hotel mailbox email before connecting Microsoft 365.', 'error');
+        const emailChannel = commChannels.find(channel => channel.id === 'email') || null;
+        setConfigureEmailProvider(EMAIL_PROVIDERS.MICROSOFT_365);
+        setActiveConfigure(emailChannel);
+        return;
+      }
+
+      window.location.assign(getMicrosoft365ConnectUrl(activeHotel));
+    } catch (err) {
+      console.error('Microsoft 365 connect failed:', err);
+      triggerToast('Could not open Microsoft 365 authorization. Check the backend Microsoft OAuth route.', 'error');
+    }
+  };
+
+  const saveEmailConnectionSettings = async (updates) => {
+    const activeHotel = await loadActiveHotel();
+    if (!activeHotel?.id) {
+      throw new Error('Hotel record is missing. Refresh the page and try again.');
+    }
+
+    const provider = normalizeEmailProvider(updates.emailProvider);
+    const mailboxEmail = updates.hotelEmail || updates.smtpUser;
+    if (!mailboxEmail) {
+      throw new Error('Hotel mailbox email is required.');
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${localStorage.getItem('autopilot_token')}`
+    };
+
+    if (provider === EMAIL_PROVIDERS.IMAP_SMTP) {
+      const response = await fetch(`${API_BASE_URL}/api/email-integrations/${activeHotel.id}/imap-smtp`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          mailboxEmail,
+          imapHost: updates.imapHost,
+          imapPort: updates.imapPort ? Number(updates.imapPort) : 993,
+          imapSecure: updates.imapSecure !== 'false',
+          smtpHost: updates.smtpHost,
+          smtpPort: updates.smtpPort ? Number(updates.smtpPort) : 587,
+          smtpSecure: updates.smtpSecure === 'true',
+          smtpUser: updates.smtpUser || mailboxEmail,
+          smtpPass: updates.smtpPass || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Failed to save IMAP/SMTP integration.');
+      return data;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/email-integrations/${activeHotel.id}/provider`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        provider,
+        mailboxEmail
+      })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || 'Failed to save email provider.');
+    return data;
+  };
+
+  const openConfigureConnection = (connection) => {
+    if (connection.id === 'email') {
+      setConfigureEmailProvider(normalizeEmailProvider(connection.provider || hotelData?.emailIntegrationType));
+    }
+    setActiveConfigure(connection);
   };
 
   // Save Settings Connection Trigger
@@ -356,6 +527,24 @@ const Integrations = () => {
     if (activeConfigure.id === 'email') updates.emailConnected = true;
 
     try {
+      if (activeConfigure.id === 'email') {
+        const result = await saveEmailConnectionSettings(updates);
+        const provider = normalizeEmailProvider(updates.emailProvider);
+        triggerToast(
+          provider === EMAIL_PROVIDERS.IMAP_SMTP
+            ? 'IMAP/SMTP mailbox settings saved. The scheduled poller can now receive emails.'
+            : `${getEmailProviderMeta(provider).name} selected. Continue with OAuth connection.`,
+          'success'
+        );
+        fetchIntegrations();
+        setActiveConfigure(null);
+
+        if (provider === EMAIL_PROVIDERS.MICROSOFT_365 && result?.integration?.status !== 'Connected') {
+          handleMicrosoft365Connect();
+        }
+        return;
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/hotels/settings`, {
         method: 'PUT',
         headers: {
@@ -420,25 +609,38 @@ const Integrations = () => {
               <Mail size={16} />
             </div>
             <div className="space-y-0.5">
-              <p className="text-[9px] font-black uppercase tracking-widest font-mono text-blue-700">Google Workspace Mailbox</p>
-              <h2 className="text-sm font-black text-slate-950">Connect {hotelData?.hotelEmail || 'hotel mailbox'} with Gmail API</h2>
+              <p className="text-[9px] font-black uppercase tracking-widest font-mono text-blue-700">Mailbox Connection</p>
+              <h2 className="text-sm font-black text-slate-950">Connect {hotelData?.hotelEmail || 'hotel mailbox'} with Google or Microsoft</h2>
               <p className="text-[11px] font-semibold text-slate-600">
-                Authorize Gmail send/read access so Hotelogx Connect can process guest emails for this hotel.
-                {hotelData?.emailConnected && hotelData?.emailIntegrationType === 'GOOGLE_WORKSPACE' ? ' This mailbox is already marked connected.' : ''}
+                Authorize mailbox send/read access so Hotelogx Connect can process guest emails for this hotel.
+                {hotelData?.emailConnected ? ` Current provider: ${getEmailProviderMeta(hotelData.emailIntegrationType).name}.` : ''}
               </p>
             </div>
           </div>
-          <a
-            href={getGoogleWorkspaceConnectUrl()}
-            onClick={(e) => {
-              e.preventDefault();
-              handleGoogleWorkspaceConnect();
-            }}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[9px] font-black uppercase tracking-widest cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Mail size={13} />
-            <span>Connect Google Workspace</span>
-          </a>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <a
+              href={getGoogleWorkspaceConnectUrl()}
+              onClick={(e) => {
+                e.preventDefault();
+                handleGoogleWorkspaceConnect();
+              }}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[9px] font-black uppercase tracking-widest cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Mail size={13} />
+              <span>Google</span>
+            </a>
+            <a
+              href={getMicrosoft365ConnectUrl()}
+              onClick={(e) => {
+                e.preventDefault();
+                handleMicrosoft365Connect();
+              }}
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[9px] font-black uppercase tracking-widest cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Mail size={13} />
+              <span>Microsoft</span>
+            </a>
+          </div>
         </div>
 
       {/* 2. CONNECTION HEALTH SUMMARY (MINIMAL OPERATIONAL STATUS BAR) */}
@@ -535,7 +737,7 @@ const Integrations = () => {
                 {/* Card Actions */}
                 <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
                   <button
-                    onClick={() => setActiveConfigure({ ...pms, pmsType: true })}
+                    onClick={() => openConfigureConnection({ ...pms, pmsType: true })}
                     className="py-2.5 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer transition-colors text-center font-sans"
                   >
                     Configure
@@ -657,22 +859,35 @@ const Integrations = () => {
 
               {/* Card Actions */}
               {channel.id === 'email' && (
-                <a
-                  href={getGoogleWorkspaceConnectUrl()}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleGoogleWorkspaceConnect();
-                  }}
-                  className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer text-center font-sans flex items-center justify-center gap-1"
-                >
-                  <Mail size={12} />
-                  <span>Connect Google Workspace</span>
-                </a>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <a
+                    href={getGoogleWorkspaceConnectUrl()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleGoogleWorkspaceConnect();
+                    }}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer text-center font-sans flex items-center justify-center gap-1"
+                  >
+                    <Mail size={12} />
+                    <span>Connect Google</span>
+                  </a>
+                  <a
+                    href={getMicrosoft365ConnectUrl()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleMicrosoft365Connect();
+                    }}
+                    className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer text-center font-sans flex items-center justify-center gap-1"
+                  >
+                    <Mail size={12} />
+                    <span>Connect Microsoft</span>
+                  </a>
+                </div>
               )}
 
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
                 <button
-                  onClick={() => setActiveConfigure({ ...channel, pmsType: false })}
+                  onClick={() => openConfigureConnection({ ...channel, pmsType: false })}
                   className="py-2 px-1 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer text-center font-sans"
                 >
                   Configure
@@ -831,18 +1046,41 @@ const Integrations = () => {
                   </div>
 
                   <div className="space-y-3">
-                    {activeConfigure.fields.map((field, idx) => (
+                    {activeConfigure.fields
+                      .filter(field => {
+                        if (activeConfigure.id !== 'email') return true;
+                        if (field.key === 'smtpPass') return configureEmailProvider === EMAIL_PROVIDERS.IMAP_SMTP;
+                        return !field.providers || field.providers.includes(configureEmailProvider);
+                      })
+                      .map((field, idx) => (
                       <div key={idx} className="space-y-1">
                         <label className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider font-mono block">
                           {field.label}
                         </label>
-                        <input
-                          type={field.type || 'text'}
-                          name={field.key}
-                          defaultValue={field.value}
-                          placeholder={field.placeholder}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-[#6D4AFF]/40 text-slate-800"
-                        />
+                        {field.type === 'select' ? (
+                          <select
+                            name={field.key}
+                            defaultValue={field.key === 'emailProvider' ? configureEmailProvider : field.value}
+                            onChange={(event) => {
+                              if (field.key === 'emailProvider') {
+                                setConfigureEmailProvider(normalizeEmailProvider(event.target.value));
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-[#6D4AFF]/40 text-slate-800"
+                          >
+                            {(field.options || []).map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={field.type || 'text'}
+                            name={field.key}
+                            defaultValue={field.value}
+                            placeholder={field.placeholder}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-[#6D4AFF]/40 text-slate-800"
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
