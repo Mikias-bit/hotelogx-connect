@@ -859,7 +859,7 @@ const Integrations = () => {
 
               {/* Card Actions */}
               {channel.id === 'email' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <a
                     href={getGoogleWorkspaceConnectUrl()}
                     onClick={(e) => {
@@ -882,6 +882,16 @@ const Integrations = () => {
                     <Mail size={12} />
                     <span>Connect Microsoft</span>
                   </a>
+                  <button
+                    onClick={() => {
+                      setConfigureEmailProvider(EMAIL_PROVIDERS.IMAP_SMTP);
+                      openConfigureConnection({ ...channel, pmsType: false });
+                    }}
+                    className="w-full py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-[8.5px] font-black uppercase tracking-widest cursor-pointer text-center font-sans flex items-center justify-center gap-1"
+                  >
+                    <Mail size={12} />
+                    <span>Other Mailbox</span>
+                  </button>
                 </div>
               )}
 

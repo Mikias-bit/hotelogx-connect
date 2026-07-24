@@ -3,6 +3,7 @@ const prisma = require('../config/prisma');
 const { encrypt } = require('../utils/cryptoUtils');
 const { EmailAdapterFactory, normalizeProvider, PROVIDERS } = require('../services/email/EmailAdapterFactory');
 const { googleOAuthService } = require('../services/email/GoogleOAuthService');
+const { microsoftOAuthService } = require('../services/email/MicrosoftOAuthService');
 const config = require('../config/env');
 
 const router = express.Router();
@@ -164,6 +165,135 @@ router.get('/google/callback', async (req, res) => {
 
     const fallbackUrl = new URL(`${config.frontendBaseUrl}/app/integrations`);
     fallbackUrl.searchParams.set('emailProvider', PROVIDERS.GOOGLE_WORKSPACE);
+    fallbackUrl.searchParams.set('emailStatus', 'error');
+    fallbackUrl.searchParams.set('message', error.message);
+    return res.redirect(fallbackUrl.toString());
+  }
+});
+
+router.get('/microsoft/connect/:hotelId', async (req, res) => {
+  try {
+    const hotelId = Number(req.params.hotelId);
+    const returnTo = resolveFrontendReturnUrl(req.query.returnTo);
+
+    if (!hotelId) {
+      return res.status(400).json({ success: false, message: 'Valid hotelId is required.' });
+    }
+
+    const hotel = await prisma.hotel.findUnique({ where: { id: hotelId } });
+    if (!hotel) {
+      return res.status(404).json({ success: false, message: 'Hotel not found.' });
+    }
+
+    const mailboxEmail = req.query.mailboxEmail || hotel.hotelEmail;
+    if (!mailboxEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'mailboxEmail is required. Save the hotel email before starting Microsoft OAuth.'
+      });
+    }
+
+    const authorizationUrl = microsoftOAuthService.buildAuthorizationUrl({
+      hotelId,
+      mailboxEmail,
+      returnTo
+    });
+
+    if (req.query.mode === 'json') {
+      return res.json({ success: true, authorizationUrl });
+    }
+
+    return res.redirect(authorizationUrl);
+  } catch (error) {
+    console.error('[Microsoft OAuth] Failed to start connection:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/microsoft/callback', async (req, res) => {
+  let callbackState = null;
+  try {
+    if (req.query.error) {
+      throw new Error(`Microsoft OAuth failed: ${req.query.error_description || req.query.error}`);
+    }
+
+    const code = req.query.code;
+    if (!code) {
+      return res.status(400).json({ success: false, message: 'Microsoft OAuth callback is missing code.' });
+    }
+
+    const state = microsoftOAuthService.verifyState(req.query.state);
+    callbackState = state;
+    const tokenPayload = await microsoftOAuthService.exchangeCodeForTokens(code);
+    const profile = await microsoftOAuthService.fetchUserProfile(tokenPayload.access_token);
+    const connectedEmail = String(profile.mail || profile.userPrincipalName || '').toLowerCase();
+    const expectedEmail = String(state.mailboxEmail || '').toLowerCase();
+
+    if (expectedEmail && connectedEmail && expectedEmail !== connectedEmail) {
+      throw new Error(`Connected Microsoft account ${connectedEmail} does not match expected mailbox ${expectedEmail}.`);
+    }
+
+    if (!prisma.emailIntegration) {
+      throw new Error('EmailIntegration Prisma model is not available. Run Prisma migration and generate the client.');
+    }
+
+    const encryptedTokenPayload = microsoftOAuthService.encryptTokenPayload(tokenPayload);
+    const integration = await prisma.emailIntegration.upsert({
+      where: { hotelId: Number(state.hotelId) },
+      create: {
+        hotelId: Number(state.hotelId),
+        provider: PROVIDERS.MICROSOFT_365,
+        mailboxEmail: connectedEmail || expectedEmail,
+        status: 'Connected',
+        oauthTenantId: config.microsoftOAuth.tenantId || null,
+        oauthUserId: profile.id || connectedEmail || null,
+        secretRef: encryptedTokenPayload,
+        lastDeltaLink: null,
+        lastSyncedAt: new Date()
+      },
+      update: {
+        provider: PROVIDERS.MICROSOFT_365,
+        mailboxEmail: connectedEmail || expectedEmail,
+        status: 'Connected',
+        oauthTenantId: config.microsoftOAuth.tenantId || null,
+        oauthUserId: profile.id || connectedEmail || null,
+        secretRef: encryptedTokenPayload,
+        lastDeltaLink: null,
+        lastSyncedAt: new Date()
+      }
+    });
+
+    await prisma.hotel.update({
+      where: { id: Number(state.hotelId) },
+      data: {
+        emailConnected: true,
+        emailIntegrationType: PROVIDERS.MICROSOFT_365,
+        hotelEmail: integration.mailboxEmail
+      }
+    });
+
+    const returnTo = resolveFrontendReturnUrl(state.returnTo);
+    const redirectUrl = new URL(returnTo);
+    redirectUrl.searchParams.set('emailProvider', PROVIDERS.MICROSOFT_365);
+    redirectUrl.searchParams.set('emailStatus', 'connected');
+    redirectUrl.searchParams.set('hotelId', String(state.hotelId));
+
+    return res.redirect(redirectUrl.toString());
+  } catch (error) {
+    console.error('[Microsoft OAuth] Callback failed:', error);
+    if (callbackState?.hotelId && prisma.emailIntegration) {
+      try {
+        await prisma.emailIntegration.update({
+          where: { hotelId: Number(callbackState.hotelId) },
+          data: { status: 'Error' }
+        });
+      } catch (statusError) {
+        console.error('[Microsoft OAuth] Failed to persist callback error status:', statusError.message);
+      }
+    }
+
+    const fallbackUrl = new URL(`${config.frontendBaseUrl}/app/integrations`);
+    fallbackUrl.searchParams.set('emailProvider', PROVIDERS.MICROSOFT_365);
     fallbackUrl.searchParams.set('emailStatus', 'error');
     fallbackUrl.searchParams.set('message', error.message);
     return res.redirect(fallbackUrl.toString());
